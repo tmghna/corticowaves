@@ -1,0 +1,131 @@
+digraph CorticoWavesFlowchart {
+    // Global Settings
+    graph [
+        rankdir=TB,
+        splines=ortho,
+        nodesep=0.5,
+        ranksep=0.7,
+        fontname="Helvetica",
+        fontsize=12,
+        bgcolor="#FAFAFA"
+    ];
+
+    node [
+        fontname="Helvetica",
+        fontsize=10,
+        shape=rect,
+        style="filled,rounded",
+        fillcolor="#FFFFFF",
+        color="#333333",
+        penwidth=1.2,
+        margin="0.2,0.1"
+    ];
+
+    edge [
+        fontname="Helvetica",
+        fontsize=9,
+        color="#444444",
+        penwidth=1.2
+    ];
+
+    // ==========================================
+    // STAGE 1: HARDWARE ACQUISITION
+    // ==========================================
+    subgraph cluster_stage1 {
+        label="STAGE 1: Hardware Sensing & Acquisition";
+        style="filled,rounded";
+        fillcolor="#E8F0FE";
+        color="#1A73E8";
+        fontname="Helvetica-Bold";
+        fontsize=11;
+
+        volunteer [label="Volunteer Subject\n(Prefrontal FP1/FP2)", fillcolor="#D2E3FC"];
+        bioamp    [label="BioAmp EXG Pill\n(Analog Amp & Hardware Filter)"];
+        esp32     [label="ADS1115 ADC + ESP32 Chip\n(16-bit ADC @ 250 Hz | Wi-Fi Tx)"];
+
+        volunteer -> bioamp [xlabel=" Microvolts"];
+        bioamp -> esp32 [xlabel=" Boosted Signal"];
+    }
+
+    // ==========================================
+    // STAGE 2: PYTHON DSP ENGINE
+    // ==========================================
+    subgraph cluster_stage2 {
+        label="STAGE 2: CorticoWaves Python DSP Engine";
+        style="filled,rounded";
+        fillcolor="#E6F4EA";
+        color="#137333";
+        fontname="Helvetica-Bold";
+        fontsize=11;
+
+        filter    [label="Digital Noise Filter Chain\n(50 Hz Notch + 1-35 Hz Butterworth)"];
+        buffer    [label="Sliding FIFO Ring Buffer\n(2.0s Window / 500 Samples)"];
+        psd       [label="Power Spectral Density (PSD)\n(Alpha 8-12 Hz vs Beta 13-30 Hz)", fillcolor="#CEEAD6"];
+        attention [label="Attention Index Calculation\n(A_raw = P_beta / P_alpha)"];
+        sigmoid   [label="Z-Score & Sigmoid Scaling\n(Output Dynamic Drive I_ext ∈ [0.0, 1.0])"];
+
+        filter -> buffer;
+        buffer -> psd;
+        psd -> attention [xlabel=" Bandpower Integrals"];
+        attention -> sigmoid;
+    }
+
+    // ==========================================
+    // STAGE 3: WEBSOCKET BRIDGE
+    // ==========================================
+    subgraph cluster_stage3 {
+        label="STAGE 3: Communication Bridge";
+        style="filled,rounded";
+        fillcolor="#FEF7E0";
+        color="#B06000";
+        fontname="Helvetica-Bold";
+        fontsize=11;
+
+        websocket [label="Async Python WebSocket Server\n(Broadcasts I_ext @ 16 Hz)", fillcolor="#FFE082"];
+    }
+
+    // ==========================================
+    // STAGE 4: WEBGL GPU NEURAL FIELD SOLVER
+    // ==========================================
+    subgraph cluster_stage4 {
+        label="STAGE 4: GPU Neural Field Simulation (WebGL)";
+        style="filled,rounded";
+        fillcolor="#FCE8E6";
+        color="#C5221F";
+        fontname="Helvetica-Bold";
+        fontsize=11;
+
+        pingpong [label="Ping-Pong Framebuffers A & B\n(256 x 256 Spatial Grid @ 60 FPS)"];
+        shader   [label="Wilson-Cowan GPU Fragment Shader\n(5x5 Gaussian Convolutions)", fillcolor="#FAD2CF"];
+        euler    [label="Forward Euler Integration Step\n(Updates Excitatory E & Inhibitory I States)"];
+
+        pingpong -> shader;
+        shader -> euler;
+        euler -> pingpong [xlabel=" Swap Texture State (t + Δt)"];
+    }
+
+    // ==========================================
+    // STAGE 5: VISUAL FEEDBACK LOOP
+    // ==========================================
+    subgraph cluster_stage5 {
+        label="STAGE 5: Real-Time Display & Feedback Loop";
+        style="filled,rounded";
+        fillcolor="#F3E8FD";
+        color="#7627BB";
+        fontname="Helvetica-Bold";
+        fontsize=11;
+
+        display [label="Color-Mapped WebGL Screen\n(Cortical Waves, Target Rings, Chaos)", fillcolor="#E9D5FF"];
+    }
+
+    // ==========================================
+    // INTER-STAGE CONNECTIONS
+    // ==========================================
+    esp32 -> filter       [xlabel=" 250 Hz Raw Stream"];
+    sigmoid -> websocket  [xlabel=" Live Attention Parameter"];
+    websocket -> pingpong [xlabel=" JSON Packet Stream"];
+    pingpong -> display   [xlabel=" 60 FPS Frame Render"];
+
+    // Closed-loop biological feedback
+    display -> volunteer  [xlabel=" Biological Feedback Loop", style=dashed, color="#7627BB", fontcolor="#7627BB", constraint=false];
+}
