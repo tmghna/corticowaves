@@ -41,10 +41,10 @@ digraph CorticoWavesFlowchart {
 
         volunteer [label="Volunteer Subject\n(Prefrontal FP1/FP2)", fillcolor="#D2E3FC"];
         bioamp    [label="BioAmp EXG Pill\n(Analog Amp & Hardware Filter)"];
-        esp32     [label="ADS1115 ADC + ESP32 Chip\n(16-bit ADC @ 250 Hz | Wi-Fi Tx)"];
+        arduino   [label="Arduino Analog Input\n(10-bit ADC @ 100 Hz | Firmata Serial Tx)"];
 
         volunteer -> bioamp [xlabel=" Microvolts"];
-        bioamp -> esp32 [xlabel=" Boosted Signal"];
+        bioamp -> arduino [xlabel=" Boosted Signal"];
     }
 
     // ==========================================
@@ -121,7 +121,7 @@ digraph CorticoWavesFlowchart {
     // ==========================================
     // INTER-STAGE CONNECTIONS
     // ==========================================
-    esp32 -> filter       [xlabel=" 250 Hz Raw Stream"];
+    arduino -> filter     [xlabel=" 100 Hz Raw Stream"];
     sigmoid -> websocket  [xlabel=" Live Attention Parameter"];
     websocket -> pingpong [xlabel=" JSON Packet Stream"];
     pingpong -> display   [xlabel=" 60 FPS Frame Render"];
