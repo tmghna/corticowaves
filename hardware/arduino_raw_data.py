@@ -1,8 +1,7 @@
 import time
+import argparse
+import os
 from pyfirmata2 import Arduino
-
-# Specify port or use '/dev/ttyACM0' / 'COM3'
-PORT = '/dev/ttyACM0' 
 
 start_time = None
 
@@ -19,10 +18,34 @@ def bioamp_callback(data):
         
         print(f"{elapsed_time:8.2f}s | {data:20.4f} | {voltage:10.3f} V | {adc_count:18d}")
 
-def main():
+def find_arduino_port():
+    import serial.tools.list_ports
+
+    for port in serial.tools.list_ports.comports():
+        description = port.description or ""
+        if (
+            "Arduino" in description
+            or "ttyACM" in port.device
+            or "ttyUSB" in port.device
+            or port.device.startswith("COM")
+            or "usbmodem" in port.device
+            or "usbserial" in port.device
+        ):
+            return port.device
+    return None
+
+
+def main(port_override=None):
+    port = port_override or os.environ.get("CORTICOWAVES_ARDUINO_PORT") or find_arduino_port()
+    if not port:
+        raise RuntimeError(
+            "Arduino port not found. Pass --port COM3, /dev/ttyACM0, "
+            "or /dev/cu.usbmodem*."
+        )
+
     try:
-        board = Arduino(PORT)
-        print(f"Successfully connected to Arduino on {PORT}")
+        board = Arduino(port)
+        print(f"Successfully connected to Arduino on {port}")
 
         # Set hardware sampling interval to 10 ms (100 Hz)
         board.samplingOn(10)
@@ -52,4 +75,7 @@ def main():
             print("Arduino serial connection closed.")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Stream raw Arduino BioAmp samples.")
+    parser.add_argument("--port", default=None, help="Arduino serial port override")
+    args = parser.parse_args()
+    main(args.port)

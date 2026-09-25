@@ -1,1 +1,6 @@
+numpy>=2.0,<3
+scipy>=1.13,<2
+pyserial>=3.5,<4
+pyFirmata2>=2.5,<3
 websockets>=13,<16
+pygame>=2.5,<3

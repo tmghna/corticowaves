@@ -11,11 +11,11 @@ import '../styles/global.css';
     <title>CorticoWaves // Neural Telemetry</title>
   </head>
   <body class="font-mono text-zinc-200">
-    <main class="mx-auto min-h-screen max-w-[1900px] px-5 py-7 sm:px-10 lg:px-14">
-      <header class="mb-7 flex flex-wrap items-end justify-between gap-5 border-b border-toxic/40 pb-5">
+    <main class="dashboard-shell mx-auto max-w-[1900px] px-5 py-5 sm:px-8 lg:px-10">
+      <header class="dashboard-header flex flex-wrap items-end justify-between gap-4 border-b border-toxic/40 pb-4">
         <div>
-          <p class="mb-3 text-xs tracking-[0.35em] text-toxic/75">CW // CORTICOTHALAMIC CONTROL SYSTEM</p>
-          <h1 class="glow-text text-3xl font-bold tracking-[0.12em] text-toxic sm:text-5xl">CORTICOWAVES</h1>
+          <p class="mb-2 text-[10px] tracking-[0.35em] text-toxic/75 sm:text-xs">CW // CORTICOTHALAMIC CONTROL SYSTEM</p>
+          <h1 class="glow-text text-3xl font-bold tracking-[0.12em] text-toxic sm:text-4xl">CORTICOWAVES</h1>
         </div>
         <div class="text-right text-xs uppercase tracking-[0.2em] text-sky-200/60">
           <p>Pipeline: <span class="text-amber">STAGE_02 / DSP</span></p>
@@ -23,8 +23,8 @@ import '../styles/global.css';
         </div>
       </header>
 
-      <section class="grid auto-rows-min gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.75fr)]">
-        <article class="panel-grid flex min-h-[640px] flex-col border border-dashed border-amber/70 bg-black/60 shadow-[0_0_28px_rgba(255,176,0,0.1)] lg:row-span-2">
+      <section class="dashboard-grid grid gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(360px,0.8fr)]">
+        <article class="panel-grid flex min-h-0 flex-col border border-dashed border-amber/70 bg-black/60 shadow-[0_0_28px_rgba(255,176,0,0.1)]">
           <div class="flex items-center justify-between border-b border-amber/40 px-4 py-3">
             <div>
               <h2 class="text-base font-bold tracking-[0.16em] text-amber sm:text-lg">02 // NAVIGATION ENGINE</h2>
@@ -44,7 +44,7 @@ import '../styles/global.css';
           </div>
         </article>
 
-        <article class="panel-grid flex min-h-[360px] flex-col border border-toxic/70 bg-black/60 shadow-[0_0_28px_rgba(183,255,60,0.08)]">
+        <article class="panel-grid telemetry-panel flex min-h-0 flex-col border border-toxic/70 bg-black/60 shadow-[0_0_28px_rgba(183,255,60,0.08)]">
           <div class="flex flex-wrap items-center justify-between gap-4 border-b border-toxic/40 px-4 py-3">
             <div>
               <h2 class="text-base font-bold tracking-[0.16em] text-toxic sm:text-lg">01 // LIVE NEURAL TELEMETRY</h2>
@@ -67,18 +67,9 @@ import '../styles/global.css';
           <div id="telemetry-feed" class="telemetry-scroll max-h-36 overflow-y-auto border-t border-toxic/20 px-5 py-3 text-xs leading-6 text-sky-100/70" aria-live="polite">
             <p class="text-zinc-600">[ boot ] awaiting neural stream on ws://localhost:8765</p>
           </div>
-          <div class="border-t border-toxic/20 px-5 py-4 text-xs uppercase tracking-[0.16em] text-sky-200/50">
+          <div class="border-t border-toxic/20 px-5 py-3 text-xs uppercase tracking-[0.16em] text-sky-200/50">
             Live amplitude trace // raw packets and derived attention metric
           </div>
-        </article>
-
-        <article class="flex min-h-[230px] flex-col border border-dashed border-toxic/50 bg-black/50 shadow-[0_0_24px_rgba(183,255,60,0.07)]">
-            <div class="border-b border-toxic/30 px-5 py-4">
-              <h2 class="text-base font-bold tracking-[0.16em] text-toxic sm:text-lg">03 // CORTICAL STATE HEATMAP</h2>
-            </div>
-            <div id="neural-field-container" class="flex flex-1 items-center justify-center p-8 text-center text-sm tracking-[0.12em] text-toxic/60">
-              [ AWAITING WEBGL WILSON-COWAN SIMULATION ]
-            </div>
         </article>
       </section>
     </main>
@@ -137,35 +128,25 @@ import '../styles/global.css';
         }
         return sequence.slice(0, length);
       };
-      const attentionStats = { mean: 0, variance: 1, initialized: false };
       let latestAttentionTime = 0;
       let rocketLastFrame = performance.now();
-
-      const sigmoid = (value) => 1 / (1 + Math.exp(-Math.max(-8, Math.min(8, value))));
+      let smoothedAttention = 0.5;
 
       const updateRocketAttention = (attention) => {
-        if (!Number.isFinite(attention) || attention < 0 || attention > 1e6) return;
-        const transformed = Math.log1p(attention);
-        const learningRate = 0.02;
-        if (!attentionStats.initialized) {
-          attentionStats.mean = transformed;
-          attentionStats.variance = 0.01;
-          attentionStats.initialized = true;
-        } else {
-          const delta = transformed - attentionStats.mean;
-          attentionStats.mean += learningRate * delta;
-          attentionStats.variance = (1 - learningRate) * (attentionStats.variance + learningRate * delta * delta);
-        }
-        const zScore = (transformed - attentionStats.mean) / Math.sqrt(Math.max(attentionStats.variance, 0.0001));
-        const normalized = sigmoid(1.15 * zScore);
-        latestAttentionTime = performance.now();
+        if (!Number.isFinite(attention) || attention < 0 || attention > 1) return;
+        const now = performance.now();
+        const elapsed = latestAttentionTime ? Math.max(0, (now - latestAttentionTime) / 1000) : 0.1;
+        const smoothing = 1 - Math.exp(-elapsed / 0.55);
+        smoothedAttention += (attention - smoothedAttention) * smoothing;
+        const normalized = smoothedAttention;
+        latestAttentionTime = now;
         if (rocketCanvas) {
           const top = 45;
           const bottom = Math.max(top + 1, rocketCanvas.clientHeight - 45);
           rocket.targetY = bottom - normalized * (bottom - top);
         }
         if (rocketState) {
-          rocketState.textContent = `Z ${zScore.toFixed(2)} // ${Math.round(normalized * 100)}%`;
+          rocketState.textContent = `DRIVE ${Math.round(normalized * 100)}%`;
           rocketState.className = 'text-[10px] uppercase tracking-[0.16em] text-amber';
         }
       };
@@ -505,7 +486,7 @@ import '../styles/global.css';
       const formatPacket = (payload) => {
         if (typeof payload !== 'object' || payload === null) return [`raw: ${String(payload)}`];
         const raw = payload.raw ?? payload.voltage ?? payload.sample ?? 'n/a';
-        const attention = payload.attention ?? payload.attention_metric ?? payload.metric ?? 'n/a';
+        const attention = payload.attention_metric ?? payload.attention ?? payload.metric ?? 'n/a';
         const numericRaw = Number(raw);
         const numericAttention = Number(attention);
         if (Number.isFinite(numericRaw)) {
