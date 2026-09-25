@@ -95,6 +95,22 @@ python telemetry_bridge.py
 
 Mock packets run at 100 Hz and are marked `source: "mock"`.
 
+## Browser rocket game
+
+The original `rocket_game.py` remains available as a standalone Pygame
+prototype. The web dashboard uses a browser canvas implementation in section
+2, so no Pygame window is required:
+
+```bash
+npm --prefix dashboard run dev -- --host localhost --port 4321
+```
+
+With the real telemetry bridge and Arduino publisher running, attention is
+transformed with `log1p`, normalized using an online z-score, passed through a
+bounded sigmoid, and then applied to a smoothed rocket target. The game
+returns to neutral altitude if attention packets become stale for 2.5 seconds.
+Press `R` after a collision to relaunch.
+
 ## Manual relay input
 
 To relay newline-delimited JSON from another stage-2 process:

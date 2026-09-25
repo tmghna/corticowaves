@@ -7,9 +7,9 @@ export default {
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace']
       },
       colors: {
-        toxic: '#b7ff3c',
-        amber: '#ffb000',
-        ink: '#080a0a'
+        toxic: '#37e1ff',
+        amber: '#ffb05a',
+        ink: '#030519'
       }
     }
   },

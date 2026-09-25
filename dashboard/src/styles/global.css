@@ -7,7 +7,7 @@
 :root {
   color-scheme: dark;
   font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
-  background: #080a0a;
+  background: #030519;
 }
 
 * {
@@ -20,10 +20,12 @@ body {
   margin: 0;
   overflow-x: hidden;
   background:
-    linear-gradient(rgba(183, 255, 60, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(183, 255, 60, 0.035) 1px, transparent 1px),
-    #080a0a;
-  background-size: 32px 32px;
+    radial-gradient(circle at 78% 20%, rgba(45, 120, 255, 0.18), transparent 28rem),
+    radial-gradient(circle at 12% 80%, rgba(100, 20, 120, 0.15), transparent 24rem),
+    linear-gradient(rgba(55, 225, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(55, 225, 255, 0.035) 1px, transparent 1px),
+    #030519;
+  background-size: auto, auto, 40px 40px, 40px 40px;
 }
 
 ::selection {
@@ -40,42 +42,42 @@ body {
 }
 
 .glow-text {
-  text-shadow: 0 0 12px rgba(183, 255, 60, 0.7);
+  text-shadow: 0 0 16px rgba(55, 225, 255, 0.8);
 }
 
 .panel-grid {
-  background-image: linear-gradient(rgba(183, 255, 60, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(183, 255, 60, 0.04) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-image: linear-gradient(rgba(55, 225, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(55, 225, 255, 0.045) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 .attention-readout {
   display: flex;
   min-width: 112px;
   flex-direction: column;
-  border: 1px solid rgba(255, 176, 0, 0.75);
-  background: rgba(255, 176, 0, 0.08);
-  padding: 6px 10px 5px;
-  box-shadow: 0 0 16px rgba(255, 176, 0, 0.12), inset 0 0 12px rgba(255, 176, 0, 0.05);
+  border: 1px solid rgba(255, 176, 90, 0.8);
+  background: rgba(255, 176, 90, 0.1);
+  padding: 9px 14px 7px;
+  box-shadow: 0 0 18px rgba(255, 176, 90, 0.16), inset 0 0 12px rgba(255, 176, 90, 0.05);
 }
 
 .attention-label {
   color: rgba(255, 176, 0, 0.7);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   line-height: 1.2;
 }
 
 .attention-readout strong {
-  color: #ffb000;
-  font-size: 1.25rem;
+  color: #ffb05a;
+  font-size: 1.6rem;
   line-height: 1.2;
-  text-shadow: 0 0 10px rgba(255, 176, 0, 0.8);
+  text-shadow: 0 0 12px rgba(255, 176, 90, 0.85);
 }
 
 .signal-chart-wrap {
   position: relative;
-  min-height: 310px;
+  min-height: 390px;
   flex: 1;
   border-bottom: 1px solid rgba(183, 255, 60, 0.15);
   background: rgba(0, 0, 0, 0.35);
@@ -84,7 +86,7 @@ body {
 #signal-chart {
   display: block;
   height: 100%;
-  min-height: 310px;
+  min-height: 390px;
   width: 100%;
 }
 
@@ -93,7 +95,7 @@ body {
 .chart-axis-label {
   position: absolute;
   color: rgba(183, 255, 60, 0.42);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.1em;
   pointer-events: none;
 }
@@ -115,4 +117,55 @@ body {
 .chart-time-label {
   bottom: 7px;
   right: 16px;
+}
+
+.rocket-game-surface {
+  position: relative;
+  min-height: 680px;
+  flex: 1;
+  overflow: hidden;
+  background: #030519;
+}
+
+#rocket-game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 680px;
+  cursor: crosshair;
+}
+
+.rocket-game-controls {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.rocket-game-controls button {
+  pointer-events: auto;
+  border: 1px solid rgba(55, 225, 255, 0.9);
+  background: rgba(8, 35, 78, 0.9);
+  color: #f5faff;
+  padding: 14px 22px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  box-shadow: 0 0 22px rgba(55, 225, 255, 0.28), inset 0 0 16px rgba(55, 225, 255, 0.08);
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.rocket-game-controls button:hover,
+.rocket-game-controls button:focus-visible {
+  background: rgba(25, 82, 145, 0.95);
+  box-shadow: 0 0 30px rgba(55, 225, 255, 0.5), inset 0 0 18px rgba(55, 225, 255, 0.14);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.rocket-game-controls button[hidden] {
+  display: none;
 }

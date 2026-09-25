@@ -20,6 +20,25 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedError, Conne
 CLIENTS = set()
 
 
+def valid_packet(packet):
+    if not isinstance(packet, dict):
+        return False
+    source = packet.get("source")
+    if source not in {"arduino", "mock"}:
+        return False
+    for field in ("raw", "attention"):
+        if field in packet and (
+            not isinstance(packet[field], (int, float))
+            or not math.isfinite(packet[field])
+        ):
+            return False
+    if "attention" in packet and not 0 <= packet["attention"] <= 1e6:
+        return False
+    if "raw" in packet and abs(packet["raw"]) > 5:
+        return False
+    return True
+
+
 async def dashboard_client(websocket):
     CLIENTS.add(websocket)
     try:
@@ -30,7 +49,10 @@ async def dashboard_client(websocket):
                 except json.JSONDecodeError:
                     print("[bridge] ignored non-JSON WebSocket packet", file=sys.stderr)
                     continue
-                await broadcast(packet, exclude=websocket)
+                if valid_packet(packet):
+                    await broadcast(packet, exclude=websocket)
+                else:
+                    print("[bridge] ignored invalid telemetry packet", file=sys.stderr)
         except (ConnectionClosed, ConnectionClosedError, ConnectionClosedOK, TimeoutError):
             # Browser reloads and publisher restarts are normal during local
             # development and must not terminate the bridge.
