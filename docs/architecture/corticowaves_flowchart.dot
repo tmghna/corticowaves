@@ -58,11 +58,11 @@ digraph CorticoWavesFlowchart {
         fontname="Helvetica-Bold";
         fontsize=11;
 
-        filter    [label="Digital Noise Filter Chain\n(50 Hz Notch + 1-35 Hz Butterworth)"];
-        buffer    [label="Sliding FIFO Ring Buffer\n(2.0s Window / 500 Samples)"];
-        psd       [label="Power Spectral Density (PSD)\n(Alpha 8-12 Hz vs Beta 13-30 Hz)", fillcolor="#CEEAD6"];
-        attention [label="Attention Index Calculation\n(A_raw = P_beta / P_alpha)"];
-        sigmoid   [label="Z-Score & Sigmoid Scaling\n(Output Dynamic Drive I_ext ∈ [0.0, 1.0])"];
+        filter    [label="Streaming 4th-Order Butterworth Band-Pass\n(0.5-30 Hz)"];
+        buffer    [label="Sliding FIFO Ring Buffer\n(1.5s Window / 150 Samples)"];
+        psd       [label="Welch Power Spectral Density\n(Alpha 8-12 Hz vs Beta 13-30 Hz)", fillcolor="#CEEAD6"];
+        attention [label="Beta / Alpha Ratio\n(0.4s Smoothing; 5s Warm-Up)"];
+        sigmoid   [label="Adaptive 30s EWMA Z-Score + Sigmoid\n(Output Attention Drive ∈ [0.0, 1.0])"];
 
         filter -> buffer;
         buffer -> psd;
@@ -81,7 +81,7 @@ digraph CorticoWavesFlowchart {
         fontname="Helvetica-Bold";
         fontsize=11;
 
-        websocket [label="Async Python WebSocket Server\n(Broadcasts I_ext @ 16 Hz)", fillcolor="#FFE082"];
+        websocket [label="Async Python WebSocket Relay\n(Arduino display data @ 20 Hz; mock @ 100 Hz)", fillcolor="#FFE082"];
     }
 
     // ==========================================

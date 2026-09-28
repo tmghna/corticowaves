@@ -30,7 +30,7 @@ The Python dependencies are in `requirements.txt`:
 
 - NumPy and SciPy for filtering and PSD
 - pySerial and pyFirmata2 for Arduino/Firmata
-- websockets for the local telemetry bridge
+- websockets 15 for the local telemetry bridge and direct local connections
 - Pygame for the standalone desktop rocket prototype
 
 ## First-time setup: Linux and macOS
@@ -280,6 +280,18 @@ Mock packets are marked `source: "mock"`. Real packets are marked
 `source: "arduino"`. If the dashboard shows mock data during a hardware run,
 stop the mock bridge and start `python telemetry_bridge.py --real`.
 
+## Manual relay input
+
+To relay newline-delimited JSON from another process, use:
+
+```text
+python telemetry_bridge.py --stdin --keep-open
+```
+
+The bridge broadcasts each JSON line to connected dashboard clients and stays
+available after the input stream closes. Without `--keep-open`, it exits when
+stdin reaches EOF.
+
 ## Raw Arduino stream
 
 To inspect normalized values, volts, and reconstructed 10-bit ADC counts:
@@ -355,3 +367,11 @@ The adaptive engine intentionally emits `z_score: 0.0` and
 `attention_metric: 0.5` during its five-second warm-up. After warm-up, inspect
 `attention_ratio`, `z_score`, `running_mean`, and `running_std` in the live
 telemetry packets.
+
+### Arduino data appears in the terminal but not the dashboard
+
+Confirm the real relay is running in Terminal 1 and that the browser reports
+`CONNECTED`. The Arduino publisher connects directly to the local relay, even
+when an HTTP proxy is configured in the environment; connection failures are
+reported in its terminal and retried automatically. The dashboard uses
+`ws://localhost:8765`, so open it on the same computer as the relay.

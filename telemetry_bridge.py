@@ -131,17 +131,16 @@ async def run(args):
         ping_timeout=10,
         close_timeout=2,
     ):
-        mode = "mock" if args.mock else "real"
+        mode = "mock" if args.mock else "stdin" if args.stdin else "real"
         print(f"[bridge] WebSocket telemetry bridge listening on ws://{args.host}:{args.port} ({mode})")
         if args.mock:
             stream = mock_stream(args.mock_rate)
-        elif args.keep_open:
-            # The Arduino publisher connects as a WebSocket client; it doesn't
-            # need stdin. Waiting on an event keeps the bridge alive even when
-            # launched from a terminal with no persistent stdin pipe.
-            stream = asyncio.Event().wait()
+        elif args.stdin:
+            stream = stdin_stream(args.keep_open)
         else:
-            stream = stdin_stream(False)
+            # The Arduino publisher connects as a WebSocket client and doesn't
+            # need stdin. Keep the relay alive even when terminal stdin closes.
+            stream = asyncio.Event().wait()
         await stream
 
 
@@ -153,24 +152,27 @@ def parse_args():
     parser.add_argument(
         "--keep-open",
         action="store_true",
-        help="run as a persistent WebSocket server for the Arduino publisher",
+        help="keep an --stdin relay alive after stdin reaches EOF",
     )
     parser.add_argument(
         "--real",
         action="store_true",
-        help="run as a persistent real-hardware relay; equivalent to --stdin --keep-open",
+        help="run a persistent WebSocket relay for the Arduino publisher",
     )
     parser.add_argument(
         "--stdin",
-        dest="mock",
-        action="store_false",
+        action="store_true",
         help="broadcast newline-delimited JSON packets read from stdin",
     )
     parser.set_defaults(mock=True)
     args = parser.parse_args()
     if args.real:
+        if args.stdin:
+            parser.error("--real and --stdin cannot be used together")
         args.mock = False
         args.keep_open = True
+    elif args.stdin:
+        args.mock = False
     return args
 
 

@@ -78,11 +78,20 @@ def bioamp_callback(data):
 
 def telemetry_publisher(url):
     global display_sum, display_count
+    connection_error_reported = False
     while True:
         try:
-            with connect(url, open_timeout=2) as websocket:
+            with connect(url, open_timeout=2, proxy=None) as websocket:
+                print(f"\n[telemetry] connected to {url}", file=sys.stderr)
+                connection_error_reported = False
+                last_publish_at = 0.0
                 while True:
-                    telemetry_updated.wait(timeout=1 / TELEMETRY_RATE)
+                    telemetry_updated.wait()
+                    time_until_publish = (
+                        1 / TELEMETRY_RATE - (time.monotonic() - last_publish_at)
+                    )
+                    if time_until_publish > 0:
+                        time.sleep(time_until_publish)
                     with telemetry_lock:
                         sample_count = display_count
                         raw = display_sum / sample_count if sample_count else latest_raw
@@ -105,7 +114,14 @@ def telemetry_publisher(url):
                     if dsp_frame is not None:
                         packet.update(dsp_frame)
                     websocket.send(json.dumps(packet))
-        except (OSError, TimeoutError, WebSocketException):
+                    last_publish_at = time.monotonic()
+        except (OSError, TimeoutError, WebSocketException) as error:
+            if not connection_error_reported:
+                print(
+                    f"\n[telemetry] cannot reach {url}: {error}; retrying in 2 seconds",
+                    file=sys.stderr,
+                )
+                connection_error_reported = True
             time.sleep(2)
 
 
