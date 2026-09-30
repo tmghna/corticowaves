@@ -6,22 +6,34 @@ import sys
 import threading
 import time
 
+# SciPy's ducc FFT backend does not accept comma-separated OpenMP thread
+# counts such as "8,1"; normalize the inherited environment before importing
+# SciPy so Welch PSD cannot abort the acquisition loop.
+for _thread_env in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    _thread_value = os.environ.get(_thread_env)
+    if _thread_value and "," in _thread_value:
+        os.environ[_thread_env] = _thread_value.split(",", 1)[0]
+
 import numpy as np
-import serial.tools.list_ports
-from pyfirmata2 import Arduino
 from scipy.signal import butter, sosfilt, sosfilt_zi
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import connect
 
 from corticowaves_dsp import AdaptiveZScoreEngine, calculate_attention_ratio
+from hardware.signal_sources import (
+    ArduinoFirmataSource,
+    Esp32Ads1115SerialSource,
+    find_serial_port,
+)
 
-FS = 100
+FS = 100.0
 WINDOW_SEC = 1.5
 BUFFER_SIZE = int(FS * WINDOW_SEC)
 REFRESH_RATE = 0.1
 TELEMETRY_RATE = 20
 LOWCUT_HZ = 0.5
 HIGHCUT_HZ = 30.0
+current_highcut_hz = HIGHCUT_HZ
 
 signal_buffer = collections.deque(maxlen=BUFFER_SIZE)
 buffer_lock = threading.Lock()
@@ -30,6 +42,8 @@ telemetry_updated = threading.Event()
 latest_raw = None
 latest_raw_timestamp = None
 latest_dsp_frame = None
+latest_source_metadata = {}
+sample_received = threading.Event()
 display_sum = 0.0
 display_count = 0
 filter_lock = threading.Lock()
@@ -37,30 +51,29 @@ filter_sos = butter(4, (LOWCUT_HZ, HIGHCUT_HZ), btype="bandpass", fs=FS, output=
 filter_state = None
 
 
-def find_arduino_port():
-    ports = list(serial.tools.list_ports.comports())
-    for port in ports:
-        description = port.description or ""
-        device = port.device or ""
-        if (
-            "Arduino" in description
-            or "ttyACM" in device
-            or "ttyUSB" in device
-            or "usbmodem" in device
-            or "usbserial" in device
-        ):
-            return device
-    for port in ports:
-        if (port.device or "").upper().startswith("COM"):
-            return port.device
-    return None
+def configure_sample_rate(sample_rate_hz, highcut_hz):
+    global FS, BUFFER_SIZE, filter_sos, filter_state, current_highcut_hz
+    if highcut_hz <= LOWCUT_HZ or sample_rate_hz <= 2 * highcut_hz:
+        raise ValueError(
+            f"sample rate must be greater than {2 * highcut_hz} Hz "
+            f"for the {highcut_hz} Hz cutoff"
+        )
+    FS = float(sample_rate_hz)
+    current_highcut_hz = float(highcut_hz)
+    BUFFER_SIZE = max(2, int(round(FS * WINDOW_SEC)))
+    filter_sos = butter(
+        4,
+        (LOWCUT_HZ, current_highcut_hz),
+        btype="bandpass",
+        fs=FS,
+        output="sos",
+    )
+    filter_state = None
 
 
-def bioamp_callback(data):
-    global latest_raw, latest_raw_timestamp, filter_state, display_sum, display_count
-    if data is None:
-        return
-    voltage = data * 5.0
+def sample_callback(voltage, timestamp, metadata):
+    global latest_raw, latest_raw_timestamp, latest_source_metadata
+    global filter_state, display_sum, display_count
     with filter_lock:
         if filter_state is None:
             filter_state = sosfilt_zi(filter_sos) * voltage
@@ -72,7 +85,9 @@ def bioamp_callback(data):
         display_sum += eeg_signal
         display_count += 1
         latest_raw = round(eeg_signal, 5)
-        latest_raw_timestamp = time.time()
+        latest_raw_timestamp = timestamp
+        latest_source_metadata = dict(metadata)
+    sample_received.set()
     telemetry_updated.set()
 
 
@@ -97,6 +112,7 @@ def telemetry_publisher(url):
                         raw = display_sum / sample_count if sample_count else latest_raw
                         raw_timestamp = latest_raw_timestamp
                         dsp_frame = latest_dsp_frame
+                        source_metadata = dict(latest_source_metadata)
                         display_sum = 0.0
                         display_count = 0
                         telemetry_updated.clear()
@@ -106,10 +122,11 @@ def telemetry_publisher(url):
                         "timestamp": raw_timestamp,
                         "raw": round(raw, 5),
                         "filtered": True,
-                        "bandpass": "0.5-30Hz",
+                        "bandpass": f"{LOWCUT_HZ:g}-{current_highcut_hz:g}Hz",
                         "display_averaged": True,
                         "samples_averaged": sample_count,
-                        "source": "arduino",
+                        "sample_rate_hz": FS,
+                        **source_metadata,
                     }
                     if dsp_frame is not None:
                         packet.update(dsp_frame)
@@ -125,32 +142,50 @@ def telemetry_publisher(url):
             time.sleep(2)
 
 
-def main(telemetry_url="ws://localhost:8765", port_override=None):
-    global latest_dsp_frame
-    port = port_override or os.environ.get("CORTICOWAVES_ARDUINO_PORT") or find_arduino_port()
+def make_source(args):
+    port = args.port or os.environ.get("CORTICOWAVES_DEVICE_PORT") or find_serial_port()
     if not port:
-        print("Error: Could not auto-detect Arduino port. Check USB connection.")
-        sys.exit(1)
-    print(f"[*] Arduino port: {port}")
-    adaptive_engine = AdaptiveZScoreEngine(
-        sampling_rate_hz=1 / REFRESH_RATE,
-        window_time_sec=30.0,
-        warmup_seconds=5.0,
-        sigmoid_gain=1.2,
-    )
+        raise RuntimeError("No hardware serial port found. Pass --port explicitly.")
+    if args.backend == "arduino":
+        source = ArduinoFirmataSource(
+            port=port,
+            reference_voltage=args.arduino_reference_voltage,
+        )
+    else:
+        source = Esp32Ads1115SerialSource(
+            port=port,
+            baudrate=args.baudrate,
+            sample_rate_hz=args.sample_rate or 250.0,
+        )
+    if args.sample_rate is not None and args.backend == "arduino":
+        source.sample_rate_hz = args.sample_rate
+    return source
+
+
+def main(args):
+    global latest_dsp_frame
+    source = make_source(args)
+    configure_sample_rate(source.sample_rate_hz, source.highcut_hz)
     try:
-        board = Arduino(port)
-        print("[*] Firmata connection established.")
-        board.samplingOn(10)
-        bioamp_pin = board.get_pin("a:0:i")
-        bioamp_pin.register_callback(bioamp_callback)
-        bioamp_pin.enable_reporting()
+        source.start(sample_callback)
+        if not sample_received.wait(timeout=5):
+            raise RuntimeError(
+                f"No samples received from {args.backend} on {source.port} after 5 seconds. "
+                "Check the firmware, serial baud rate, ADS1115 wiring, and selected port."
+            )
+        adaptive_engine = AdaptiveZScoreEngine(
+            sampling_rate_hz=1 / REFRESH_RATE,
+            window_time_sec=30.0,
+            warmup_seconds=5.0,
+            sigmoid_gain=1.2,
+        )
         threading.Thread(
             target=telemetry_publisher,
-            args=(telemetry_url,),
+            args=(args.telemetry_url,),
             daemon=True,
             name="telemetry-publisher",
         ).start()
+        print(f"[*] {args.backend} acquisition started on {source.port}.")
         print("[*] Live adaptive Z-score warm-up active; no pre-session calibration required.")
         while True:
             with buffer_lock:
@@ -183,17 +218,33 @@ def main(telemetry_url="ws://localhost:8765", port_override=None):
     except Exception as error:
         print(f"\n[!] Unexpected error: {error}")
     finally:
-        if "board" in locals():
-            board.exit()
-            print("[*] Serial interface closed safely.")
+        source.stop()
+        print("[*] Acquisition source closed safely.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run live CorticoWaves Arduino DSP.")
-    parser.add_argument("--port", default=None, help="Arduino serial port override")
+    parser = argparse.ArgumentParser(description="Run live CorticoWaves DSP.")
+    parser.add_argument(
+        "--backend",
+        choices=("arduino", "esp32_ads1115"),
+        default=os.environ.get("CORTICOWAVES_BACKEND", "arduino"),
+    )
+    parser.add_argument("--port", default=None, help="Arduino or ESP32 serial port")
+    parser.add_argument(
+        "--baudrate",
+        type=int,
+        default=115200,
+        help="ESP32 serial baud rate; firmware defaults to stable 115200 CSV output",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=float,
+        default=None,
+        help="Override hardware sample rate; defaults to 100 Hz for Arduino and 250 Hz for ESP32",
+    )
+    parser.add_argument("--arduino-reference-voltage", type=float, default=5.0)
     parser.add_argument(
         "--telemetry-url",
         default=os.environ.get("CORTICOWAVES_TELEMETRY_URL", "ws://localhost:8765"),
     )
-    args = parser.parse_args()
-    main(args.telemetry_url, args.port)
+    main(parser.parse_args())

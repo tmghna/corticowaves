@@ -1,39 +1,41 @@
 # CorticoWaves
 
-CorticoWaves is a corticothalamic neural-field project. The current pipeline
-uses an Arduino analog input and BioAmp EXG Pill without an ADS1115 converter:
+CorticoWaves reads EEG data from either an Arduino Uno or an ESP32 with an
+ADS1115 converter, calculates a live Beta/Alpha attention metric, and sends
+the result to a local Astro dashboard and rocket game.
+
+## How the system works
 
 ```text
-Arduino @ 100 Hz
-  -> 0.5-30 Hz streaming band-pass
-  -> 1.5 s Welch power window
-  -> Welch PSD
-  -> raw Beta / Alpha attention ratio
-  -> 0.4 s ratio pre-smoothing
-  -> 5 s warm-up
-  -> adaptive 30 s EWMA Z-score
-  -> sigmoid drive parameter in [0, 1]
-  -> local WebSocket bridge
-  -> Astro dashboard and attention-controlled rocket game
+Arduino or ESP32 + ADS1115
+  -> serial acquisition
+  -> 0.5-30 Hz Arduino / 0.5-50 Hz ESP32 filter
+  -> Welch PSD and Beta/Alpha ratio
+  -> adaptive Z-score and sigmoid attention metric [0, 1]
+  -> WebSocket relay at ws://localhost:8765
+  -> Astro dashboard
 ```
+
+The ESP32 path uses 250 samples/second and 115200 baud. The Arduino path uses
+100 samples/second through StandardFirmata. The adaptive engine warms up for
+five seconds and then continuously updates its mean and variance; no
+eyes-open/eyes-closed calibration is required.
 
 ## Requirements
 
-- Python 3.10 or newer
-- Node.js 20 or newer and npm
+- Python 3.10+
+- Node.js 20+ and npm
 - Arduino IDE
-- Arduino running the `StandardFirmata` example
 - BioAmp EXG Pill and electrodes
 - USB data cable
+- Either:
+  - Arduino Uno with the `StandardFirmata` example, or
+  - ESP32, ADS1115, and the firmware in
+    `hardware/esp32_ads1115/esp32_ads1115.ino`
 
-The Python dependencies are in `requirements.txt`:
+## Install
 
-- NumPy and SciPy for filtering and PSD
-- pySerial and pyFirmata2 for Arduino/Firmata
-- websockets 15 for the local telemetry bridge and direct local connections
-- Pygame for the standalone desktop rocket prototype
-
-## First-time setup: Linux and macOS
+### Linux and macOS
 
 From the repository root:
 
@@ -42,33 +44,21 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-```
-
-Install Node.js 20+ using your preferred package manager, then install the
-dashboard dependencies:
-
-```bash
 cd dashboard
 npm install
 cd ..
 ```
 
-On Linux, the user running the program may need serial-port permission:
+On Linux, grant the current user access to USB serial devices, then log out
+and back in:
 
 ```bash
 sudo usermod -aG dialout "$USER"
 ```
 
-Log out and back in after changing the group. Some distributions use a
-different group; inspect the port permissions with `ls -l /dev/ttyACM0`.
+### Windows PowerShell
 
-On macOS, Arduino ports usually look like `/dev/cu.usbmodem*` or
-`/dev/cu.usbserial*`. No `dialout` step is required.
-
-## First-time setup: Windows PowerShell
-
-Install Python 3.10+ and Node.js 20+ from their official installers. In
-PowerShell, from the repository root:
+Install Python and Node.js, then run:
 
 ```powershell
 py -3 -m venv .venv
@@ -80,298 +70,220 @@ npm install
 cd ..
 ```
 
-If PowerShell blocks activation for the current user, run:
+If activation is blocked:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-Then activate the environment again. Windows Arduino ports normally appear as
-`COM3`, `COM4`, and so on. Find the number in Arduino IDE under
-**Tools > Port**, or with:
+## Hardware setup
 
-```powershell
+### Arduino Uno
+
+1. Open Arduino IDE.
+2. Open **File > Examples > Firmata > StandardFirmata**.
+3. Select the Arduino board and USB port.
+4. Upload the example.
+5. Close Serial Monitor before starting Python.
+
+Find the serial port with:
+
+```bash
 python -m serial.tools.list_ports -v
 ```
 
-## Arduino firmware setup
+Typical ports are `/dev/ttyACM0`, `/dev/ttyUSB0`, `/dev/cu.usbmodem*`, or
+`COM3`.
 
-1. Open Arduino IDE.
-2. Select **File > Examples > Firmata > StandardFirmata**.
-3. Select the correct board under **Tools > Board**.
-4. Select the USB port under **Tools > Port**.
+### ESP32 and ADS1115
+
+Use this wiring:
+
+| BioAmp EXG Pill | ADS1115 | ESP32 |
+| --- | --- | --- |
+| VCC | VDD | 3V3 |
+| GND | GND | GND |
+| OUT | A0 | — |
+| — | SDA | GPIO 21 |
+| — | SCL | GPIO 22 |
+| — | ADDR | GND |
+
+This gives the ADS1115 address `0x48`. The configurable firmware values are
+at the top of `hardware/esp32_ads1115/esp32_ads1115.ino`:
+
+```cpp
+I2C_SDA_PIN
+I2C_SCL_PIN
+ADS1115_I2C_ADDRESS
+ADS1115_CHANNEL
+SAMPLE_RATE_HZ
+SERIAL_BAUD
+ADS1115_GAIN
+```
+
+In Arduino IDE:
+
+1. Install the ESP32 board package.
+2. Install the **Adafruit ADS1X15** library.
+3. Open the ESP32 sketch.
+4. Select the correct ESP32 board and port.
 5. Upload the sketch.
-6. Close Serial Monitor before running Python; it can lock the port.
+6. Open Serial Monitor at **115200 baud** and press **EN/RST**.
 
-The software auto-detects common Arduino ports. If detection selects the wrong
-device, pass an explicit port with `--port`.
-
-## Run real telemetry
-
-Use three terminals. Activate `.venv` in each terminal on Linux/macOS, or run
-`.\.venv\Scripts\Activate.ps1` in each PowerShell terminal on Windows.
-
-### Terminal 1: real WebSocket relay
-
-Linux/macOS/Windows:
+Expected output:
 
 ```text
+BOOT,CORTICOWAVES_ESP32
+ADS1115,CONNECTED
+READY,250,A0,2/3
+S,0,...
+S,1,...
+```
+
+If the ADS1115 is not detected, the firmware prints:
+
+```text
+ERROR,ADS1115_NOT_FOUND
+```
+
+Close Serial Monitor before starting Python because only one process can own
+the serial port.
+
+## Run the application
+
+Open three terminals. Activate `.venv` in each terminal.
+
+### Terminal 1: WebSocket relay
+
+For real hardware:
+
+```bash
 python telemetry_bridge.py --real
 ```
 
-The relay listens on `ws://localhost:8765`. Do not use
-`python telemetry_bridge.py` for a hardware run; that command starts mock data.
+The relay listens on `ws://localhost:8765`.
 
-### Terminal 2: Arduino acquisition and DSP
-
-Automatic port detection:
-
-```text
-python -u attention_feed_arduino.py
-```
-
-Explicit port examples:
+For mock data without hardware:
 
 ```bash
-# Linux
-python -u attention_feed_arduino.py --port /dev/ttyACM0
-
-# macOS
-python -u attention_feed_arduino.py --port /dev/cu.usbmodem14101
+python telemetry_bridge.py
 ```
 
-```powershell
-# Windows PowerShell
-python -u attention_feed_arduino.py --port COM3
-```
+### Terminal 2: acquisition and DSP
 
-The same override can be supplied without changing the command:
+Arduino with automatic port detection:
 
 ```bash
-export CORTICOWAVES_ARDUINO_PORT=/dev/ttyACM0
-python -u attention_feed_arduino.py
+python -u attention_feed_arduino.py --backend arduino
 ```
+
+Arduino with an explicit port:
+
+```bash
+python -u attention_feed_arduino.py --backend arduino --port /dev/ttyACM0
+```
+
+Windows example:
 
 ```powershell
-$env:CORTICOWAVES_ARDUINO_PORT = "COM3"
-python -u attention_feed_arduino.py
+python -u attention_feed_arduino.py --backend arduino --port COM3
 ```
 
-There is no separate eyes-open/eyes-closed session and no hardcoded baseline.
-The first five seconds of raw Beta/Alpha ratios are used only to seed the
-running mean and standard deviation; the exported drive is neutral during
-this warm-up. Afterward, the mean and variance adapt continuously with an
-EWMA time constant of 30 seconds at the 10 Hz DSP update rate.
-The 1.5-second Welch window and short ratio smoother reduce spectral-window
-jitter before the live adaptive normalization without introducing a static
-baseline.
+ESP32 with an explicit port:
 
-## Live latency budget
+```bash
+python -u attention_feed_arduino.py \
+  --backend esp32_ads1115 \
+  --port /dev/ttyUSB0 \
+  --baudrate 115200 \
+  --sample-rate 250
+```
 
-With an Arduino Uno sampling at 100 Hz, the first meaningful rocket response
-is approximately **0.9-1.8 seconds** after a sustained EEG change. A mostly
-settled response takes approximately **2.5-4 seconds** because the system
-intentionally smooths the spectral ratio and rocket motion:
+Windows example:
 
-| Stage | Typical contribution |
-| --- | ---: |
-| Arduino ADC sample and Firmata/USB delivery | 10-30 ms |
-| Rolling Welch feature window | 0.75 s effective response, up to 1.5 s to fully replace old data |
-| DSP update scheduling | 0-100 ms |
-| Local WebSocket bridge and browser delivery | usually under 20 ms |
-| Browser frame scheduling | 0-17 ms |
-| Ratio smoothing and rocket interpolation | approximately 0.95 s for first response, up to 2.85 s to mostly settle |
+```powershell
+python -u attention_feed_arduino.py `
+  --backend esp32_ads1115 `
+  --port COM5 `
+  --baudrate 115200 `
+  --sample-rate 250
+```
 
-The first-response estimate is the 0.75-second effective spectral window plus
-the 0.4-second ratio smoother and 0.55-second rocket interpolation time
-constants, with transport and scheduling overhead. The settled estimate uses
-roughly two to three time constants for the smoothing stages plus the
-1.5-second rolling window. The Arduino's 10 ms sample interval is therefore
-not the system's total latency. The serial link and bridge are comparatively
-small; the rolling spectral window and intentional smoothing dominate the
-response.
-
-The DSP calculation already runs independently of the Firmata callback and
-WebSocket publisher, so multiprocessing would not reduce this response time:
-it would only move the approximately 0.15 ms numerical calculation to another
-worker while adding IPC overhead. The shorter Welch window is the effective
-latency reduction. It provides approximately 0.67 Hz frequency-bin spacing
-instead of 0.33 Hz, which remains suitable for the configured alpha and beta
-bands but is less noise-averaged than the previous window.
-
-### Terminal 3: Astro dashboard
-
-From the repository root:
+### Terminal 3: dashboard
 
 ```bash
 cd dashboard
 npm run dev -- --host localhost --port 4321
 ```
 
-Open the URL Astro prints, normally `http://localhost:4321`.
+Open `http://localhost:4321`.
 
-The dashboard contains the live telemetry graph, attention readout, and
-attention-controlled browser rocket game. The rocket starts with **START
-MISSION** and can be relaunched with **RESTART MISSION** after a collision.
+The dashboard displays the live signal, attention metric, connection state,
+and rocket game. Press **START MISSION** or **Space** to begin. Press the
+pause button or **Space** again to pause and resume.
 
-## Verify the Arduino port
+## Useful commands
 
-Linux/macOS:
+List serial devices:
 
 ```bash
 python -m serial.tools.list_ports -v
 ```
 
-Windows PowerShell:
-
-```powershell
-python -m serial.tools.list_ports -v
-```
-
-Expected examples:
-
-```text
-/dev/ttyACM0
-/dev/cu.usbmodem14101
-COM3
-```
-
-After unplugging and reconnecting the Arduino, stop and restart
-`attention_feed_arduino.py`; Firmata does not automatically reinitialize a
-physically disconnected board.
-
-## Stop and restart services
-
-Stop each foreground process with `Ctrl+C`. Restart in this order:
-
-1. `python telemetry_bridge.py --real`
-2. `python -u attention_feed_arduino.py`
-3. `cd dashboard; npm run dev -- --host localhost --port 4321`
-
-If port `8765` is already in use:
-
-Linux/macOS:
+Inspect Arduino samples:
 
 ```bash
-ss -ltnp | grep ':8765'       # Linux
-lsof -nP -iTCP:8765 -sTCP:LISTEN  # macOS
-kill <PID>
-```
-
-Windows PowerShell:
-
-```powershell
-Get-NetTCPConnection -LocalPort 8765
-Stop-Process -Id <PID>
-```
-
-If Astro moves to port `4322`, an older Astro process is using `4321`. Close
-the old process or open the URL Astro reports.
-
-## Mock telemetry
-
-Use mock telemetry only when the Arduino is disconnected:
-
-```text
-python telemetry_bridge.py
-```
-
-Mock packets are marked `source: "mock"`. Real packets are marked
-`source: "arduino"`. If the dashboard shows mock data during a hardware run,
-stop the mock bridge and start `python telemetry_bridge.py --real`.
-
-## Manual relay input
-
-To relay newline-delimited JSON from another process, use:
-
-```text
-python telemetry_bridge.py --stdin --keep-open
-```
-
-The bridge broadcasts each JSON line to connected dashboard clients and stays
-available after the input stream closes. Without `--keep-open`, it exits when
-stdin reaches EOF.
-
-## Raw Arduino stream
-
-To inspect normalized values, volts, and reconstructed 10-bit ADC counts:
-
-```text
-python hardware/arduino_raw_data.py
-```
-
-Explicit ports:
-
-```text
-python hardware/arduino_raw_data.py --port COM3
 python hardware/arduino_raw_data.py --port /dev/ttyACM0
 ```
 
-## Standalone desktop rocket
+Run the standalone desktop prototype:
 
-The original Pygame prototype remains available separately from the browser
-dashboard:
-
-```text
+```bash
 python rocket_game.py
 ```
 
-It uses local mouse/trackpad input. The browser game uses the live attention
-metric instead.
+Stop each service with `Ctrl+C`. Start them again in this order:
 
-## Project layout
-
-- `corticowaves_dsp.py` — adaptive EWMA Z-score engine, Welch band-power
-  calculation, and raw Beta/Alpha ratio helpers.
-- `attention_feed_arduino.py` — Arduino acquisition, filtering, Welch PSD,
-  adaptive Z-score normalization, and telemetry.
-- `hardware/arduino_raw_data.py` — portable raw Arduino stream inspector.
-- `telemetry_bridge.py` — local mock or real WebSocket relay.
-- `dashboard/` — Astro/Tailwind dashboard and browser rocket game.
-- `rocket_game.py` — standalone Pygame prototype.
-- `docs/architecture/corticowaves_flowchart.dot` — Graphviz source.
-- `docs/architecture/corticowaves_flowchart.png` — rendered flowchart.
+1. `python telemetry_bridge.py --real`
+2. `python -u attention_feed_arduino.py ...`
+3. `cd dashboard && npm run dev -- --host localhost --port 4321`
 
 ## Troubleshooting
 
-### `ModuleNotFoundError`
+### Serial port is busy
 
-Activate the virtual environment and reinstall:
+Close Arduino Serial Monitor and Serial Plotter. Stop any other acquisition
+process using the same port, then retry.
 
-```text
-python -m pip install -r requirements.txt
-```
+### No ESP32 output
 
-### Arduino port not found
+Confirm that the correct board and port are selected, the monitor is set to
+115200 baud, and the ESP32 was reset with **EN/RST**. Check 3V3, GND, SDA,
+SCL, ADS1115 address `0x48`, and the Adafruit ADS1X15 library.
 
-Confirm the board appears in Arduino IDE, close Serial Monitor, upload
-`StandardFirmata`, and run `python -m serial.tools.list_ports -v`. Then pass
-the exact port with `--port`.
+### `ADS1115_NOT_FOUND`
 
-### `Permission denied` on Linux
+Check the ADS1115 power and ground connections, SDA/SCL pins, ADDR wiring,
+and that the BioAmp output is connected to A0.
 
-Add the user to `dialout`, log out/in, and reconnect the Arduino:
+### No samples received by Python
 
-```bash
-sudo usermod -aG dialout "$USER"
-```
+Check the selected port with `python -m serial.tools.list_ports -v`, close
+Serial Monitor, and ensure the Python baud rate matches the firmware:
+`115200` for the provided ESP32 sketch.
 
-### `address already in use`
+### Dashboard is offline
 
-Another bridge or dashboard is still running. Use the platform-specific port
-commands above, stop the old process, and restart in the documented order.
+Ensure the real relay is running on port `8765`, then open the dashboard on
+the same computer. The dashboard connects to `ws://localhost:8765`.
 
-### Dashboard shows a neutral attention value at startup
+## Project files
 
-The adaptive engine intentionally emits `z_score: 0.0` and
-`attention_metric: 0.5` during its five-second warm-up. After warm-up, inspect
-`attention_ratio`, `z_score`, `running_mean`, and `running_std` in the live
-telemetry packets.
-
-### Arduino data appears in the terminal but not the dashboard
-
-Confirm the real relay is running in Terminal 1 and that the browser reports
-`CONNECTED`. The Arduino publisher connects directly to the local relay, even
-when an HTTP proxy is configured in the environment; connection failures are
-reported in its terminal and retried automatically. The dashboard uses
-`ws://localhost:8765`, so open it on the same computer as the relay.
+- `attention_feed_arduino.py` — acquisition, filtering, DSP, and telemetry.
+- `corticowaves_dsp.py` — Welch PSD, Beta/Alpha ratio, and adaptive Z-score.
+- `hardware/signal_sources.py` — Arduino and ESP32 serial adapters.
+- `hardware/esp32_ads1115/esp32_ads1115.ino` — ESP32 firmware.
+- `telemetry_bridge.py` — local WebSocket relay.
+- `dashboard/` — Astro/Tailwind dashboard and browser game.
+- `hardware/arduino_raw_data.py` — raw Arduino inspection utility.
+- `docs/architecture/` — Graphviz flowchart source and rendered image.

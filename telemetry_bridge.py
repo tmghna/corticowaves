@@ -24,7 +24,7 @@ def valid_packet(packet):
     if not isinstance(packet, dict):
         return False
     source = packet.get("source")
-    if source not in {"arduino", "mock"}:
+    if source not in {"arduino", "esp32_ads1115", "mock"}:
         return False
     for field in ("raw", "attention"):
         if field in packet and (

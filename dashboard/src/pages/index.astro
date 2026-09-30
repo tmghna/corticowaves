@@ -24,7 +24,7 @@ import '../styles/global.css';
       </header>
 
       <section class="dashboard-grid grid gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(360px,0.8fr)]">
-        <article class="panel-grid flex min-h-0 flex-col border border-dashed border-amber/70 bg-black/60 shadow-[0_0_28px_rgba(255,176,0,0.1)]">
+        <article class="panel-grid flex min-h-0 flex-col border border-amber/70 bg-black/60 shadow-[0_0_28px_rgba(255,176,0,0.1)]">
           <div class="flex items-center justify-between border-b border-amber/40 px-4 py-3">
             <div>
               <h2 class="text-base font-bold tracking-[0.16em] text-amber sm:text-lg">02 // NAVIGATION ENGINE</h2>
@@ -36,11 +36,12 @@ import '../styles/global.css';
             <canvas id="rocket-game-canvas" aria-label="Attention-controlled neural rocket game"></canvas>
             <div id="rocket-game-controls" class="rocket-game-controls">
               <button id="rocket-start-button" type="button">START MISSION</button>
+              <button id="rocket-pause-button" type="button" hidden>PAUSE // SPACE</button>
               <button id="rocket-restart-button" type="button" hidden>RESTART MISSION</button>
             </div>
           </div>
           <div class="border-t border-amber/20 px-5 py-4 text-xs uppercase tracking-[0.16em] text-sky-200/50">
-            Z-score + sigmoid control // smooth target tracking // press R to relaunch
+            Z-score + sigmoid altitude control // SPACE pauses or resumes
           </div>
         </article>
 
@@ -65,7 +66,7 @@ import '../styles/global.css';
             <span class="chart-time-label">TIME // LIVE</span>
           </div>
           <div id="telemetry-feed" class="telemetry-scroll max-h-36 overflow-y-auto border-t border-toxic/20 px-5 py-3 text-xs leading-6 text-sky-100/70" aria-live="polite">
-            <p class="text-zinc-600">[ boot ] awaiting neural stream on ws://localhost:8765</p>
+            <p class="text-zinc-600">awaiting telemetry stream</p>
           </div>
           <div class="border-t border-toxic/20 px-5 py-3 text-xs uppercase tracking-[0.16em] text-sky-200/50">
             Live amplitude trace // raw packets and derived attention metric
@@ -93,6 +94,7 @@ import '../styles/global.css';
       const rocketContext = rocketCanvas?.getContext('2d');
       const rocketState = document.querySelector('#rocket-control-state');
       const startButton = document.querySelector('#rocket-start-button');
+      const pauseButton = document.querySelector('#rocket-pause-button');
       const restartButton = document.querySelector('#rocket-restart-button');
       const rocket = {
         y: 0,
@@ -100,6 +102,7 @@ import '../styles/global.css';
         score: 0,
         highScore: 0,
         started: false,
+        paused: false,
         gameOver: false,
         planets: [],
         previousLane: Math.random() > 0.5 ? 'upper' : 'lower',
@@ -278,7 +281,7 @@ import '../styles/global.css';
           rocketContext.fillRect(star.x * width, star.y * height, star.size, star.size);
         });
 
-        if (rocket.started && !rocket.gameOver) {
+        if (rocket.started && !rocket.gameOver && !rocket.paused) {
           if (latestAttentionTime && now - latestAttentionTime > 2500 && rocketCanvas) {
             rocket.targetY += (rocketCanvas.clientHeight / 2 - rocket.targetY) * Math.min(1, dt * 2);
             if (rocketState) {
@@ -307,6 +310,7 @@ import '../styles/global.css';
             if (Math.hypot(px - rocketX, py - rocket.y) < planet.radius * height + 22) {
               rocket.gameOver = true;
               rocket.highScore = Math.max(rocket.highScore, rocket.score);
+              if (pauseButton) pauseButton.hidden = true;
               if (restartButton) restartButton.hidden = false;
             }
           });
@@ -359,6 +363,17 @@ import '../styles/global.css';
           rocketContext.fillText('NEURAL ROCKET ENGINE STANDBY', width / 2, height / 2 + 55);
           rocketContext.textAlign = 'left';
         }
+        if (rocket.paused && !rocket.gameOver) {
+          rocketContext.fillStyle = 'rgba(3,5,25,0.58)';
+          rocketContext.fillRect(0, 0, width, height);
+          rocketContext.fillStyle = '#ffb000';
+          rocketContext.font = '700 20px "IBM Plex Mono", monospace';
+          rocketContext.textAlign = 'center';
+          rocketContext.fillText('MISSION PAUSED', width / 2, height / 2);
+          rocketContext.font = '12px "IBM Plex Mono", monospace';
+          rocketContext.fillText('PRESS SPACE OR PLAY TO RESUME', width / 2, height / 2 + 25);
+          rocketContext.textAlign = 'left';
+        }
         window.requestAnimationFrame(drawRocketGame);
       };
 
@@ -366,13 +381,32 @@ import '../styles/global.css';
       const startRocketGame = () => {
         resetRocketGame();
         rocket.started = true;
+        rocket.paused = false;
         if (startButton) startButton.hidden = true;
+        if (pauseButton) {
+          pauseButton.hidden = false;
+          pauseButton.textContent = 'PAUSE // SPACE';
+        }
         if (restartButton) restartButton.hidden = true;
         if (rocketState) rocketState.textContent = 'ARMED // AWAITING SIGNAL';
       };
 
+      const toggleRocketPause = () => {
+        if (!rocket.started || rocket.gameOver) return;
+        rocket.paused = !rocket.paused;
+        if (pauseButton) pauseButton.textContent = rocket.paused ? 'PLAY // SPACE' : 'PAUSE // SPACE';
+        if (rocketState) rocketState.textContent = rocket.paused ? 'PAUSED // SPACE TO RESUME' : 'ARMED // AWAITING SIGNAL';
+      };
+
       startButton?.addEventListener('click', startRocketGame);
+      pauseButton?.addEventListener('click', toggleRocketPause);
       restartButton?.addEventListener('click', startRocketGame);
+      window.addEventListener('keydown', (event) => {
+        if (event.code !== 'Space' || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+        event.preventDefault();
+        if (!rocket.started) startRocketGame();
+        else toggleRocketPause();
+      });
       resizeRocketCanvas();
       window.requestAnimationFrame(drawRocketGame);
       let socket;
@@ -422,7 +456,7 @@ import '../styles/global.css';
         chartContext.fillRect(0, 0, width, height);
 
         chartContext.lineWidth = 1;
-        chartContext.strokeStyle = 'rgba(183, 255, 60, 0.11)';
+        chartContext.strokeStyle = 'rgba(55, 225, 255, 0.14)';
         for (let row = 0; row <= 4; row += 1) {
           const y = padding.top + (row / 4) * plotHeight;
           chartContext.beginPath();
@@ -447,8 +481,8 @@ import '../styles/global.css';
           else chartContext.lineTo(x, y);
         });
         chartContext.lineWidth = 1;
-        chartContext.strokeStyle = '#b7ff3c';
-        chartContext.shadowColor = 'rgba(183, 255, 60, 0.9)';
+        chartContext.strokeStyle = '#36e1ff';
+        chartContext.shadowColor = 'rgba(54, 225, 255, 0.9)';
         chartContext.shadowBlur = 3;
         chartContext.stroke();
         chartContext.shadowBlur = 0;
@@ -458,8 +492,8 @@ import '../styles/global.css';
         const latestY = toY(latest.value);
         chartContext.beginPath();
         chartContext.arc(latestX, latestY, 3, 0, Math.PI * 2);
-        chartContext.fillStyle = '#ffb000';
-        chartContext.shadowColor = '#ffb000';
+        chartContext.fillStyle = '#ffb05a';
+        chartContext.shadowColor = '#ffb05a';
         chartContext.shadowBlur = 12;
         chartContext.fill();
         chartContext.shadowBlur = 0;
@@ -505,7 +539,7 @@ import '../styles/global.css';
         const source = payload.source ?? 'unknown';
         const filter = payload.filtered ? `filter: ${payload.bandpass ?? 'enabled'}` : 'filter: none';
         const averaging = payload.display_averaged ? `display_avg: ${payload.samples_averaged ?? '?'} samples` : 'display_avg: none';
-        return [`raw: ${JSON.stringify(raw)}`, `attention_metric: ${attention}`, `source: ${source}`, filter, averaging];
+        return [`raw ${JSON.stringify(raw)}`, `attention ${attention}`, `${source} // ${filter.replace('filter: ', '')}`];
       };
 
       const connect = () => {
@@ -515,7 +549,7 @@ import '../styles/global.css';
           if (state) state.textContent = 'CONNECTED';
           state?.classList.replace('text-zinc-400', 'text-toxic');
           led?.classList.replace('bg-zinc-700', 'bg-toxic');
-          appendLine('[ link ] websocket connected', 'text-toxic');
+          appendLine('telemetry online', 'text-toxic');
         });
         socket.addEventListener('message', (event) => {
           let payload = event.data;
@@ -532,14 +566,14 @@ import '../styles/global.css';
           state?.classList.replace('text-toxic', 'text-zinc-400');
           led?.classList.replace('bg-toxic', 'bg-zinc-700');
           if (!hasReportedConnectionWarning) {
-            appendLine('[ link ] telemetry bridge offline; retrying in 3s', 'text-amber');
+            appendLine('telemetry offline // retrying', 'text-amber');
             hasReportedConnectionWarning = true;
           }
           retryTimer = window.setTimeout(connect, 3000);
         });
         socket.addEventListener('error', () => {
           if (!hasReportedConnectionWarning) {
-            appendLine('[ warn ] unable to reach telemetry bridge', 'text-amber');
+            appendLine('telemetry unavailable', 'text-amber');
             hasReportedConnectionWarning = true;
           }
         });
