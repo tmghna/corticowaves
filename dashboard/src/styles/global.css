@@ -199,6 +199,28 @@ body {
   display: none;
 }
 
+#rocket-pause-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 9px 12px;
+  font-size: 11px;
+}
+
+#rocket-restart-button {
+  position: absolute;
+  top: 16px;
+  right: 156px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  border-radius: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
 @media (max-width: 1023px) {
   .dashboard-grid {
     height: auto;

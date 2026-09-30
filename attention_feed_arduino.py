@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 
 # SciPy's ducc FFT backend does not accept comma-separated OpenMP thread
 # counts such as "8,1"; normalize the inherited environment before importing
@@ -53,6 +54,7 @@ filter_state = None
 
 def configure_sample_rate(sample_rate_hz, highcut_hz):
     global FS, BUFFER_SIZE, filter_sos, filter_state, current_highcut_hz
+    global signal_buffer
     if highcut_hz <= LOWCUT_HZ or sample_rate_hz <= 2 * highcut_hz:
         raise ValueError(
             f"sample rate must be greater than {2 * highcut_hz} Hz "
@@ -61,6 +63,8 @@ def configure_sample_rate(sample_rate_hz, highcut_hz):
     FS = float(sample_rate_hz)
     current_highcut_hz = float(highcut_hz)
     BUFFER_SIZE = max(2, int(round(FS * WINDOW_SEC)))
+    with buffer_lock:
+        signal_buffer = collections.deque(maxlen=BUFFER_SIZE)
     filter_sos = butter(
         4,
         (LOWCUT_HZ, current_highcut_hz),
@@ -217,6 +221,7 @@ def main(args):
         print("\n[*] CorticoWaves DSP pipeline stopped.")
     except Exception as error:
         print(f"\n[!] Unexpected error: {error}")
+        traceback.print_exc()
     finally:
         source.stop()
         print("[*] Acquisition source closed safely.")

@@ -37,7 +37,7 @@ import '../styles/global.css';
             <div id="rocket-game-controls" class="rocket-game-controls">
               <button id="rocket-start-button" type="button">START MISSION</button>
               <button id="rocket-pause-button" type="button" hidden>PAUSE // SPACE</button>
-              <button id="rocket-restart-button" type="button" hidden>RESTART MISSION</button>
+              <button id="rocket-restart-button" type="button" aria-label="Restart mission" title="Restart mission" hidden>↻</button>
             </div>
           </div>
           <div class="border-t border-amber/20 px-5 py-4 text-xs uppercase tracking-[0.16em] text-sky-200/50">
@@ -56,7 +56,7 @@ import '../styles/global.css';
                 <span class="attention-label">ATTENTION METRIC</span>
                 <strong id="attention-value">--.--</strong>
               </div>
-              <span class="flex items-center gap-2 text-xs text-sky-200/60"><i id="status-led" class="h-2 w-2 rounded-full bg-slate-600"></i>WS : 8765</span>
+              <span class="flex items-center gap-2 text-xs text-sky-200/60"><i id="status-led" class="h-2 w-2 rounded-full bg-zinc-700"></i>WS : 8765</span>
             </div>
           </div>
           <div class="signal-chart-wrap">
@@ -387,7 +387,7 @@ import '../styles/global.css';
           pauseButton.hidden = false;
           pauseButton.textContent = 'PAUSE // SPACE';
         }
-        if (restartButton) restartButton.hidden = true;
+        if (restartButton) restartButton.hidden = false;
         if (rocketState) rocketState.textContent = 'ARMED // AWAITING SIGNAL';
       };
 
@@ -402,7 +402,13 @@ import '../styles/global.css';
       pauseButton?.addEventListener('click', toggleRocketPause);
       restartButton?.addEventListener('click', startRocketGame);
       window.addEventListener('keydown', (event) => {
-        if (event.code !== 'Space' || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+        if (event.key.toLowerCase() === 'r') {
+          event.preventDefault();
+          startRocketGame();
+          return;
+        }
+        if (event.code !== 'Space') return;
         event.preventDefault();
         if (!rocket.started) startRocketGame();
         else toggleRocketPause();

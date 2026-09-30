@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Iterable
 
 import numpy as np
+
+# SciPy's ducc FFT backend expects a scalar worker count. Some environments
+# expose comma-separated OpenMP settings such as "8,1", which otherwise make
+# Welch PSD fail on the first attention calculation.
+for _thread_env in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    _thread_value = os.environ.get(_thread_env)
+    if _thread_value and "," in _thread_value:
+        os.environ[_thread_env] = _thread_value.split(",", 1)[0]
+
 from scipy.signal import welch
 
 
